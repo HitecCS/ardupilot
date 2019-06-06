@@ -19,7 +19,8 @@
 #include <AP_HAL/AP_HAL.h>
 #include "AP_HAL_ChibiOS_Namespace.h"
 #include "Semaphores.h"
-#include "ToneAlarm.h"
+#include "AP_HAL_ChibiOS.h"
+#include <ch.h>
 
 class ChibiOS::Util : public AP_HAL::Util {
 public:
@@ -48,16 +49,47 @@ public:
     bool get_system_id(char buf[40]) override;
     
 #ifdef HAL_PWM_ALARM
-    bool toneAlarm_init();
-    void toneAlarm_set_tune(uint8_t tone);
-    void _toneAlarm_timer_tick();
-
-    static ToneAlarm& get_ToneAlarm() { return _toneAlarm; }
+    bool toneAlarm_init() override;
+    void toneAlarm_set_buzzer_tone(float frequency, float volume, uint32_t duration_ms) override;
 #endif
 
+#ifdef USE_POSIX
+    /*
+      initialise (or re-initialise) filesystem storage
+     */
+    bool fs_init(void) override;
+#endif
+
+    // return true if the reason for the reboot was a watchdog reset
+    bool was_watchdog_reset() const override;
+
+    // return true if safety was off and this was a watchdog reset
+    bool was_watchdog_safety_off() const override;
+
+    // return true if vehicle was armed and this was a watchdog reset
+    bool was_watchdog_armed() const override;
+
+    // backup home state for restore on watchdog reset
+    void set_backup_home_state(int32_t lat, int32_t lon, int32_t alt_cm) const override;
+
+    // backup home state for restore on watchdog reset
+    bool get_backup_home_state(int32_t &lat, int32_t &lon, int32_t &alt_cm) const override;
+
+    // backup atttude for restore on watchdog reset
+    void set_backup_attitude(int32_t roll_cd, int32_t pitch_cd, int32_t yaw_cd) const override;
+
+    // get watchdog reset attitude
+    bool get_backup_attitude(int32_t &roll_cd, int32_t &pitch_cd, int32_t &yaw_cd) const override;
+    
 private:
 #ifdef HAL_PWM_ALARM
-    static ToneAlarm _toneAlarm;
+    struct ToneAlarmPwmGroup {
+        pwmchannel_t chan;
+        PWMConfig pwm_cfg;
+        PWMDriver* pwm_drv;
+    };
+
+    static ToneAlarmPwmGroup _toneAlarm_pwm_group;
 #endif
     void* try_alloc_from_ccm_ram(size_t size);
     uint32_t available_memory_in_ccm_ram(void);
@@ -83,4 +115,5 @@ private:
     uint64_t get_hw_rtc() const override;
 
     bool flash_bootloader() override;
+    void set_soft_armed(const bool b) override;
 };

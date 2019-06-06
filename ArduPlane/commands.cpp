@@ -126,6 +126,7 @@ void Plane::update_home()
         }
     }
     barometer.update_calibration();
+    ahrs.resetHeightDatum();
 }
 
 void Plane::set_home_persistently(const Location &loc)
@@ -138,6 +139,10 @@ void Plane::set_home_persistently(const Location &loc)
 
 void Plane::set_home(const Location &loc)
 {
+    if (hal.util->was_watchdog_armed()) {
+        // don't overwrite home
+        return;
+    }
     ahrs.set_home(loc);
     ahrs.Log_Write_Home_And_Origin();
     gcs().send_home();

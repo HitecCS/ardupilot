@@ -769,6 +769,23 @@ Vector3f CompassCalibrator::calculate_earth_field(CompassSample &sample, enum Ro
 }
 
 /*
+  return true if two rotations are equivalent
+  This copes with the fact that we have some duplicates, like ROLL_180_YAW_90 and PITCH_180_YAW_270
+ */
+bool CompassCalibrator::rotation_equal(enum Rotation r1, enum Rotation r2) const
+{
+    if (r1 == r2) {
+        return true;
+    }
+    Vector3f v(1,2,3);
+    Vector3f v1 = v;
+    Vector3f v2 = v;
+    v1.rotate(r1);
+    v2.rotate(r2);
+    return (v1 - v2).length() < 0.001;
+}
+
+/*
   calculate compass orientation using the attitude estimate associated
   with each sample, and fix orientation on external compasses if
   the feature is enabled
@@ -779,6 +796,9 @@ bool CompassCalibrator::calculate_orientation(void)
         // we are not checking orientation
         return true;
     }
+
+    // this function is very slow
+    hal.scheduler->expect_delay_ms(1000);
 
     float variance[ROTATION_MAX] {};
 
@@ -815,10 +835,12 @@ bool CompassCalibrator::calculate_orientation(void)
     const float variance_threshold = 2.0;
     
     float second_best = besti==ROTATION_NONE?variance[1]:variance[0];
+    enum Rotation besti2 = ROTATION_NONE;
     for (enum Rotation r = ROTATION_NONE; r<ROTATION_MAX; r = (enum Rotation)(r+1)) {
-        if (r != besti) {
+        if (!rotation_equal(besti, r)) {
             if (variance[r] < second_best) {
                 second_best = variance[r];
+                besti2 = r;
             }
         }
     }
@@ -833,7 +855,8 @@ bool CompassCalibrator::calculate_orientation(void)
         pass = _orientation_confidence > variance_threshold;
     }
     if (!pass) {
-        gcs().send_text(MAV_SEVERITY_CRITICAL, "Mag(%u) bad orientation: %u %.1f", _compass_idx, besti, _orientation_confidence);
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Mag(%u) bad orientation: %u/%u %.1f", _compass_idx,
+                        besti, besti2, _orientation_confidence);
     } else if (besti == _orientation) {
         // no orientation change
         gcs().send_text(MAV_SEVERITY_INFO, "Mag(%u) good orientation: %u %.1f", _compass_idx, besti, _orientation_confidence);
@@ -843,6 +866,8 @@ bool CompassCalibrator::calculate_orientation(void)
         gcs().send_text(MAV_SEVERITY_INFO, "Mag(%u) new orientation: %u was %u %.1f", _compass_idx, besti, _orientation, _orientation_confidence);
     }
 
+    hal.scheduler->expect_delay_ms(0);
+    
     if (!pass) {
         set_status(COMPASS_CAL_BAD_ORIENTATION);
         return false;

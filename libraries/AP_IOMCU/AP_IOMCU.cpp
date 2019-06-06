@@ -61,6 +61,7 @@ enum iopage {
     PAGE_PWM_INFO = 7,
     PAGE_SETUP = 50,
     PAGE_DIRECT_PWM = 54,
+    PAGE_FAILSAFE_PWM = 55,
     PAGE_DISARMED_PWM = 108,
 };
 
@@ -156,6 +157,7 @@ void AP_IOMCU::event_failed(uint8_t event)
 void AP_IOMCU::thread_main(void)
 {
     thread_ctx = chThdGetSelfX();
+    chEvtSignal(thread_ctx, initial_event_mask);
 
     uart.begin(1500*1000, 256, 256);
     uart.set_blocking_writes(false);
@@ -278,8 +280,17 @@ void AP_IOMCU::thread_main(void)
         // update safety pwm
         if (pwm_out.safety_pwm_set != pwm_out.safety_pwm_sent) {
             uint8_t set = pwm_out.safety_pwm_set;
-            write_registers(PAGE_DISARMED_PWM, 0, IOMCU_MAX_CHANNELS, pwm_out.safety_pwm);            
-            pwm_out.safety_pwm_sent = set;
+            if (write_registers(PAGE_DISARMED_PWM, 0, IOMCU_MAX_CHANNELS, pwm_out.safety_pwm)) {
+                pwm_out.safety_pwm_sent = set;
+            }
+        }
+
+        // update failsafe pwm
+        if (pwm_out.failsafe_pwm_set != pwm_out.failsafe_pwm_sent) {
+            uint8_t set = pwm_out.failsafe_pwm_set;
+            if (write_registers(PAGE_FAILSAFE_PWM, 0, IOMCU_MAX_CHANNELS, pwm_out.failsafe_pwm)) {
+                pwm_out.failsafe_pwm_sent = set;
+            }
         }
     }
 }
@@ -289,6 +300,12 @@ void AP_IOMCU::thread_main(void)
  */
 void AP_IOMCU::send_servo_out()
 {
+#if 0
+    // simple method to test IO failsafe
+    if (AP_HAL::millis() > 30000) {
+        return;
+    }
+#endif
     if (pwm_out.num_channels > 0) {
         uint8_t n = pwm_out.num_channels;
         if (rate.sbus_rate_hz == 0) {
@@ -297,8 +314,9 @@ void AP_IOMCU::send_servo_out()
         uint32_t now = AP_HAL::micros();
         if (now - last_servo_out_us >= 2000) {
             // don't send data at more than 500Hz
-            write_registers(PAGE_DIRECT_PWM, 0, n, pwm_out.pwm);
-            last_servo_out_us = now;
+            if (write_registers(PAGE_DIRECT_PWM, 0, n, pwm_out.pwm)) {
+                last_servo_out_us = now;
+            }
         }
     }    
 }
@@ -323,6 +341,26 @@ void AP_IOMCU::read_status()
 {
     uint16_t *r = (uint16_t *)&reg_status;
     read_registers(PAGE_STATUS, 0, sizeof(reg_status)/2, r);
+
+    if (reg_status.flag_safety_off == 0) {
+        // if the IOMCU is indicating that safety is on, then force a
+        // re-check of the safety options. This copes with a IOMCU reset
+        last_safety_options = 0xFFFF;
+
+        // also check if the safety should be definately off.
+        AP_BoardConfig *boardconfig = AP_BoardConfig::get_instance();
+        if (!boardconfig) {
+            return;
+        }
+        uint16_t options = boardconfig->get_safety_button_options();
+        if (safety_forced_off && (options & AP_BoardConfig::BOARD_SAFETY_OPTION_BUTTON_ACTIVE_SAFETY_ON) == 0) {
+            // the safety has been forced off, and the user has asked
+            // that the button can never be used, so there should be
+            // no way for the safety to be on except a IOMCU
+            // reboot. Force safety off again
+            force_safety_off();
+        }
+    }
 }
 
 /*
@@ -506,6 +544,9 @@ void AP_IOMCU::trigger_event(uint8_t event)
 {
     if (thread_ctx != nullptr) {
         chEvtSignal(thread_ctx, EVENT_MASK(event));
+    } else {
+        // thread isn't started yet, trigger this event once it is started
+        initial_event_mask |= EVENT_MASK(event);
     }
 }
 
@@ -519,6 +560,7 @@ AP_HAL::Util::safety_state AP_IOMCU::get_safety_switch_state(void) const
 bool AP_IOMCU::force_safety_on(void)
 {
     trigger_event(IOEVENT_FORCE_SAFETY_ON);
+    safety_forced_off = false;
     return true;
 }
 
@@ -526,6 +568,7 @@ bool AP_IOMCU::force_safety_on(void)
 void AP_IOMCU::force_safety_off(void)
 {
     trigger_event(IOEVENT_FORCE_SAFETY_OFF);
+    safety_forced_off = true;
 }
 
 // read from one channel
@@ -704,6 +747,25 @@ void AP_IOMCU::set_safety_pwm(uint16_t chmask, uint16_t period_us)
     }
     if (changed) {
         pwm_out.safety_pwm_set++;
+    }
+}
+
+/*
+  set the pwm to use when in FMU failsafe
+ */
+void AP_IOMCU::set_failsafe_pwm(uint16_t chmask, uint16_t period_us)
+{
+    bool changed = false;
+    for (uint8_t i=0; i<IOMCU_MAX_CHANNELS; i++) {
+        if (chmask & (1U<<i)) {
+            if (pwm_out.failsafe_pwm[i] != period_us) {
+                pwm_out.failsafe_pwm[i] = period_us;
+                changed = true;
+            }
+        }
+    }
+    if (changed) {
+        pwm_out.failsafe_pwm_set++;
     }
 }
 

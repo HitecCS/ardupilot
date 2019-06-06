@@ -101,8 +101,7 @@ void UARTDriver::thread_init(void)
         return;
     }
 #if CH_CFG_USE_HEAP == TRUE
-    uart_thread_ctx = chThdCreateFromHeap(NULL,
-                                          THD_WORKING_AREA_SIZE(2048),
+    uart_thread_ctx = thread_create_alloc(THD_WORKING_AREA_SIZE(2048),
                                           "apm_uart",
                                           APM_UART_PRIORITY,
                                           uart_thread,
@@ -129,8 +128,14 @@ void UARTDriver::begin(uint32_t b, uint16_t rxS, uint16_t txS)
     if (sdef.serial == nullptr) {
         return;
     }
-    uint16_t min_tx_buffer = 4096;
-    uint16_t min_rx_buffer = 1024;
+    uint16_t min_tx_buffer = 1024;
+    uint16_t min_rx_buffer = 512;
+
+    if (sdef.is_usb) {
+        // give more buffer space for log download on USB
+        min_tx_buffer *= 4;
+    }
+    
     // on PX4 we have enough memory to have a larger transmit and
     // receive buffer for all ports. This means we don't get delays
     // while waiting to write GPS config packets

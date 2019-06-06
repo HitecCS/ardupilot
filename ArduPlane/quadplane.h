@@ -35,6 +35,8 @@ public:
     void setup_target_position(void);
     void takeoff_controller(void);
     void waypoint_controller(void);
+
+    void update_throttle_thr_mix(void);
     
     // update transition handling
     void update(void);
@@ -183,14 +185,17 @@ private:
     void init_stabilize(void);
     void control_stabilize(void);
 
+    void check_attitude_relax(void);
     void init_hover(void);
     void control_hover(void);
     void run_rate_controller(void);
 
     void init_loiter(void);
-    void init_land(void);
+    void init_qland(void);
     void control_loiter(void);
     void check_land_complete(void);
+    bool land_detector(uint32_t timeout_ms);
+    bool check_land_final(void);
 
     void init_qrtl(void);
     void control_qrtl(void);
@@ -301,6 +306,9 @@ private:
 
     // pitch when we enter loiter mode
     int32_t loiter_initial_pitch_cd;
+
+    // when did we last run the attitude controller?
+    uint32_t last_att_control_ms;
 
     // true if we have reached the airspeed threshold for transition
     enum {
@@ -458,6 +466,16 @@ private:
       return true if current mission item is a vtol landing
      */
     bool is_vtol_land(uint16_t id) const;
+
+    /*
+      are we in the approach phase of a VTOL landing?
+     */
+    bool in_vtol_land_approach(void) const;
+
+    /*
+      are we in the descent phase of a VTOL landing?
+     */
+    bool in_vtol_land_descent(void) const;
     
 public:
     void motor_test_output();

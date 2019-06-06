@@ -51,6 +51,9 @@ public:
 
     // set mask of channels that ignore safety state
     void set_safety_mask(uint16_t chmask);
+
+    // set PWM of channels when in FMU failsafe
+    void set_failsafe_pwm(uint16_t chmask, uint16_t period_us);
     
     /*
       enable sbus output
@@ -109,6 +112,8 @@ private:
     // IOMCU thread
     thread_t *thread_ctx;
 
+    eventmask_t initial_event_mask;
+
     // time when we last read various pages
     uint32_t last_status_read_ms;
     uint32_t last_rc_read_ms;
@@ -118,6 +123,9 @@ private:
 
     // last value of safety options
     uint16_t last_safety_options = 0xFFFF;
+
+    // have we forced the safety off?
+    bool safety_forced_off;
 
     void send_servo_out(void);
     void read_rc_input(void);
@@ -185,6 +193,9 @@ private:
         uint8_t safety_pwm_sent;
         uint16_t safety_pwm[IOMCU_MAX_CHANNELS];
         uint16_t safety_mask;
+        uint16_t failsafe_pwm[IOMCU_MAX_CHANNELS];
+        uint8_t failsafe_pwm_set;
+        uint8_t failsafe_pwm_sent;
     } pwm_out;
 
     // read back pwm values

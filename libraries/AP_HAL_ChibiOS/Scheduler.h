@@ -23,9 +23,8 @@
 #define CHIBIOS_SCHEDULER_MAX_TIMER_PROCS 8
 
 #define APM_MAIN_PRIORITY       180
-#define APM_TIMER_PRIORITY      178
+#define APM_TIMER_PRIORITY      181
 #define APM_RCIN_PRIORITY       177
-#define APM_TONEALARM_PRIORITY   61
 #define APM_UART_PRIORITY        60
 #define APM_STORAGE_PRIORITY     59
 #define APM_IO_PRIORITY          58
@@ -82,6 +81,14 @@ public:
     bool     check_called_boost(void);
 
     /*
+      inform the scheduler that we are calling an operation from the
+      main thread that may take an extended amount of time. This can
+      be used to prevent watchdog reset during expected long delays
+      A value of zero cancels the previous expected delay
+     */
+    void     expect_delay_ms(uint32_t ms) override;
+    
+    /*
       disable interrupts and return a context that can be used to
       restore the interrupt state. This can be used to protect
       critical regions
@@ -104,7 +111,8 @@ private:
     AP_HAL::Proc _failsafe;
     bool _called_boost;
     bool _priority_boosted;
-    
+    uint32_t expect_delay_start;
+    uint32_t expect_delay_length;
 
     AP_HAL::MemberProc _timer_proc[CHIBIOS_SCHEDULER_MAX_TIMER_PROCS];
     uint8_t _num_timer_procs;
@@ -118,7 +126,6 @@ private:
     thread_t* _rcin_thread_ctx;
     thread_t* _io_thread_ctx;
     thread_t* _storage_thread_ctx;
-    thread_t* _toneAlarm_thread_ctx;
 #if HAL_WITH_UAVCAN
     thread_t* _uavcan_thread_ctx;
 #endif
@@ -131,7 +138,6 @@ private:
     static void _io_thread(void *arg);
     static void _storage_thread(void *arg);
     static void _uart_thread(void *arg);
-    static void _toneAlarm_thread(void *arg);
 #if HAL_WITH_UAVCAN
     static void _uavcan_thread(void *arg);
 #endif

@@ -33,6 +33,7 @@
 #include <AP_Scheduler/AP_Scheduler.h>
 #include <AP_BoardConfig/AP_BoardConfig.h>
 #include "hwdef/common/stm32_util.h"
+#include "hwdef/common/watchdog.h"
 #include "shared_dma.h"
 #include "sdcard.h"
 
@@ -41,9 +42,6 @@ using namespace ChibiOS;
 extern const AP_HAL::HAL& hal;
 THD_WORKING_AREA(_timer_thread_wa, 2048);
 THD_WORKING_AREA(_rcin_thread_wa, 512);
-#ifdef HAL_PWM_ALARM
-THD_WORKING_AREA(_toneAlarm_thread_wa, 512);
-#endif
 THD_WORKING_AREA(_io_thread_wa, 2048);
 THD_WORKING_AREA(_storage_thread_wa, 2048);
 #if HAL_WITH_UAVCAN
@@ -80,14 +78,6 @@ void Scheduler::init()
                      _rcin_thread,             /* Thread function.     */
                      this);                     /* Thread parameter.    */
 
-    // the toneAlarm thread runs at a medium priority
-#ifdef HAL_PWM_ALARM
-    _toneAlarm_thread_ctx = chThdCreateStatic(_toneAlarm_thread_wa,
-                     sizeof(_toneAlarm_thread_wa),
-                     APM_TONEALARM_PRIORITY,        /* Initial priority.    */
-                     _toneAlarm_thread,             /* Thread function.     */
-                     this);                    /* Thread parameter.    */
-#endif
     // the IO thread runs at lower priority
     _io_thread_ctx = chThdCreateStatic(_io_thread_wa,
                      sizeof(_io_thread_wa),
@@ -300,6 +290,13 @@ void Scheduler::_timer_thread(void *arg)
 
         // process any pending RC output requests
         hal.rcout->timer_tick();
+
+        if (sched->expect_delay_start != 0) {
+            uint32_t now = AP_HAL::millis();
+            if (now - sched->expect_delay_start <= sched->expect_delay_length) {
+                stm32_watchdog_pat();
+            }
+        }
     }
 }
 #if HAL_WITH_UAVCAN
@@ -333,23 +330,7 @@ void Scheduler::_rcin_thread(void *arg)
         ((RCInput *)hal.rcin)->_timer_tick();
     }
 }
-#ifdef HAL_PWM_ALARM
 
-void Scheduler::_toneAlarm_thread(void *arg)
-{
-    Scheduler *sched = (Scheduler *)arg;
-    chRegSetThreadName("toneAlarm");
-    while (!sched->_hal_initialized) {
-        sched->delay_microseconds(20000);
-    }
-    while (true) {
-        sched->delay_microseconds(20000);
-
-        // process tone command
-        Util::from(hal.util)->_toneAlarm_timer_tick();
-    }
-}
-#endif
 void Scheduler::_run_io(void)
 {
     if (_in_io_proc) {
@@ -378,11 +359,22 @@ void Scheduler::_io_thread(void* arg)
     while (!sched->_hal_initialized) {
         sched->delay_microseconds(1000);
     }
+    uint32_t last_sd_start_ms = AP_HAL::millis();
     while (true) {
         sched->delay_microseconds(1000);
 
         // run registered IO processes
         sched->_run_io();
+
+        if (!hal.util->get_soft_armed()) {
+            // if sdcard hasn't mounted then retry it every 3s in the IO
+            // thread when disarmed
+            uint32_t now = AP_HAL::millis();
+            if (now - last_sd_start_ms > 3000) {
+                sdcard_retry();
+                last_sd_start_ms = now;
+            }
+        }
     }
 }
 
@@ -477,8 +469,7 @@ bool Scheduler::thread_create(AP_HAL::MemberProc proc, const char *name, uint32_
             break;
         }
     }
-    thread_t *thread_ctx = chThdCreateFromHeap(NULL,
-                                               THD_WORKING_AREA_SIZE(stack_size),
+    thread_t *thread_ctx = thread_create_alloc(THD_WORKING_AREA_SIZE(stack_size),
                                                name,
                                                thread_priority,
                                                thread_create_trampoline,
@@ -488,6 +479,26 @@ bool Scheduler::thread_create(AP_HAL::MemberProc proc, const char *name, uint32_
         return false;
     }
     return true;
+}
+
+/*
+  inform the scheduler that we are calling an operation from the
+  main thread that may take an extended amount of time. This can
+  be used to prevent watchdog reset during expected long delays
+  A value of zero cancels the previous expected delay
+*/
+void Scheduler::expect_delay_ms(uint32_t ms)
+{
+    if (!in_main_thread()) {
+        // only for main thread
+        return;
+    }
+    if (ms == 0) {
+        expect_delay_start = 0;
+    } else {
+        expect_delay_start = AP_HAL::millis();
+        expect_delay_length = ms;
+    }
 }
 
 #endif // CH_CFG_USE_DYNAMIC

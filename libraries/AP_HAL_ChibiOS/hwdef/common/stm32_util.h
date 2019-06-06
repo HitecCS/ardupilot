@@ -31,8 +31,8 @@ void show_stack_usage(void);
 // allocation functions in malloc.c    
 size_t mem_available(void);
 void *malloc_ccm(size_t size);
-void *malloc_dtcm(size_t size);
 void *malloc_dma(size_t size);
+thread_t *thread_create_alloc(size_t size, const char *name, tprio_t prio, tfunc_t pf, void *arg);
 
 // flush all dcache
 void memory_flush_all(void);
@@ -67,7 +67,24 @@ void set_fast_reboot(enum rtc_boot_magic v);
 
 // enable peripheral power if needed
 void peripheral_power_enable(void);
-    
+
+// initialise allocation subsystem
+void malloc_init(void);
+
+/*
+  read mode of a pin. This allows a pin config to be read, changed and
+  then written back
+ */
+#if defined(STM32F7) || defined(STM32F4)
+iomode_t palReadLineMode(ioline_t line);
+#endif
+
+// get RTC backup register
+uint32_t get_rtc_backup(uint8_t n);
+
+// set RTC backup register
+void set_rtc_backup(uint8_t n, uint32_t v);
+
 #ifdef __cplusplus
 }
 #endif
