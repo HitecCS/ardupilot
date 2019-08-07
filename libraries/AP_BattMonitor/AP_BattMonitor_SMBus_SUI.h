@@ -65,5 +65,7 @@ public:
                              AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev);
 
 protected:
-    virtual void read_cell_voltages();
+    virtual void timer();
+    virtual bool read_remaining_capacity_endurance();
+    virtual void read_endurance_cells();
 };

@@ -93,13 +93,6 @@ void AP_BattMonitor_SMBus_SUI::timer()
         _capacity = read_full_charge_capacity();
     }
 
-    // if (_capacity > 0) {
-    //     if(read_block_bare(_rem_cap_register, buff, 4, false) == 4) {
-    //         uint16_t data = ((uint16_t)buff[3]<<24 | (uint16_t)buff[2]<<16 | (uint16_t)buff[1]<<8 | (uint16_t)buff[0]);
-    //         // FIXME _state.current_total_mah = MAX(0, _capacity - data);
-    //     }
-    // }
-
     read_remaining_capacity();
 
     // timeout after 5 seconds
@@ -235,20 +228,54 @@ AP_BattMonitor_SMBus_Endurance::AP_BattMonitor_SMBus_Endurance(AP_BattMonitor &m
         REG_FULLCAP, REG_REMCAP, REG_TEMP, REG_SERIAL, REG_CURRENT, REG_VOLTAGE, BATTMONITOR_ENDURANCE_NUM_CELLS)
 {}
 
-void AP_BattMonitor_SMBus_Endurance::read_cell_voltages() {
+void AP_BattMonitor_SMBus_Endurance::timer() {
+    AP_BattMonitor_SMBus_SUI::timer();
+    read_remaining_capacity_endurance();
+    read_endurance_cells();
+}
+
+void AP_BattMonitor_SMBus_Endurance::read_endurance_cells() {
     AP_BattMonitor_SMBus_SUI::read_cell_voltages();
 
-    // TODO: Terrible cheating hack to make the total pack voltage work out. FIX FIX FIX!
+    // The BMS for this driver does not like having all 6 cells read.
+    // So fake the last 2 cells by giving them an average of the first 4.
 
     float pack_voltage_mv = 0.0f;
+    float avg_cell = 0.0f;
 
-    for (uint8_t i = 0; i < 4; i++) {
-        pack_voltage_mv += (float)_state.cell_voltages.cells[i];
+    for(uint16_t i = 0; i < 4; ++i) {
+        pack_voltage_mv += _state.cell_voltages.cells[i];
     }
 
-    for (uint8_t i = 0; i < 2; i++) {
-        pack_voltage_mv += (float)_state.cell_voltages.cells[i];
+    avg_cell = (pack_voltage_mv / 4);
+
+    for(uint16_t i = 0; i < 2; ++i) {
+        pack_voltage_mv += avg_cell;
+        _state.cell_voltages.cells[i + 4] = avg_cell;
     }
 
     _state.voltage = pack_voltage_mv * 1e-3;
+    _state.healthy = true;
+}
+
+bool AP_BattMonitor_SMBus_Endurance::read_remaining_capacity_endurance() {
+    int32_t capacity = _params._pack_capacity;
+
+    if (capacity > 0) {
+        uint16_t data;
+        // _state.consumed_mah = (capacity - (capacity)); // Makes it return 100%
+        if (read_word(_rem_cap_register, data)) {
+            if(data != 0) {
+                // Default implementation uses MAX(0, (capacity - data))
+                // so if the value comes back as 0, we get a momentary spike to 100% remaining.
+                // So only set state.consumed_mah 
+                _state.consumed_mah = (capacity - data);
+                return true;
+            } else {
+                return false;
+            }
+        }
+    }
+
+    return false;
 }
