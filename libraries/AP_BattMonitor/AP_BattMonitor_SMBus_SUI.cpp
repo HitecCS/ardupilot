@@ -27,6 +27,8 @@
 
 #define BATTMONITOR_SMBUS_SUI_BUTTON_DEBOUNCE      3       // button held down for 3 intervals will cause a power off event
 
+const int AVG_SIZE = 10;
+
 /*
  * Other potentially useful registers, listed here for future use
  * #define BATTMONITOR_SMBUS_SUI_VOLTAGE           0x09    // voltage register
@@ -61,6 +63,20 @@ AP_BattMonitor_SMBus_SUI::AP_BattMonitor_SMBus_SUI(AP_BattMonitor &mon,
     _dev->register_periodic_callback(100000, FUNCTOR_BIND_MEMBER(&AP_BattMonitor_SMBus_SUI::timer, void));
 }
 
+static float sum(std::vector<float>& v) {
+    float val = 0.0f;
+
+    for(std::vector<float>::iterator e = v.begin(); e != v.end(); e++) {
+        val += *e;
+    }
+
+    return val;
+}
+
+static float avg(std::vector<float>& values) {
+    return sum(values) / values.size();
+}
+
 void AP_BattMonitor_SMBus_SUI::timer()
 {
     uint8_t buff[8];
@@ -70,8 +86,22 @@ void AP_BattMonitor_SMBus_SUI::timer()
 
     // read current
     if (read_block_bare(_current_register, buff, 4, false) == 4) {
-        _state.current_amps = -(float)((int32_t)((uint32_t)buff[3]<<24 | (uint32_t)buff[2]<<16 | (uint32_t)buff[1]<<8 | (uint32_t)buff[0])) / 1000.0f;
+        float current_amps = -(float)((int32_t)((uint32_t)buff[3]<<24 | (uint32_t)buff[2]<<16 | (uint32_t)buff[1]<<8 | (uint32_t)buff[0])) / 1000.0f;
+
+        // float average = avg(currents);
+        bool add = (fabs(current_amps - _state.current_amps) < 10); // (average == 0/* || (fabs(current_amps - current_amps) < 10)*/) && (current_amps > 0);
+
+        if(add) {
+            currents.push_back(current_amps);
+            if(currents.size() > AVG_SIZE) {
+                currents.erase(currents.begin());
+            }
+        }
+
+        _state.current_amps = avg(currents);
         _state.last_time_micros = tnow;
+    } else {
+        _state.current_amps = avg(currents);
     }
 
     // read voltage
@@ -230,49 +260,55 @@ AP_BattMonitor_SMBus_Endurance::AP_BattMonitor_SMBus_Endurance(AP_BattMonitor &m
 
 void AP_BattMonitor_SMBus_Endurance::timer() {
     AP_BattMonitor_SMBus_SUI::timer();
-    read_remaining_capacity_endurance();
-    read_endurance_cells();
+    read_remaining_capacity();
 }
 
-void AP_BattMonitor_SMBus_Endurance::read_endurance_cells() {
-    AP_BattMonitor_SMBus_SUI::read_cell_voltages();
+void AP_BattMonitor_SMBus_Endurance::read_cell_voltages() {
+    uint32_t tnow = AP_HAL::micros();
 
-    // The BMS for this driver does not like having all 6 cells read.
-    // So fake the last 2 cells by giving them an average of the first 4.
+    // read cell voltages
+    if(_cell_count > 0) {
+        uint8_t voltbuff[_cell_count * 2];
 
-    float pack_voltage_mv = 0.0f;
-    float avg_cell = 0.0f;
+        if (read_block(REG_CELL_VOLTAGE, voltbuff, (_cell_count * 2), false)) {
+            float pack_voltage_mv = 0.0f;
 
-    for(uint16_t i = 0; i < 4; ++i) {
-        pack_voltage_mv += _state.cell_voltages.cells[i];
+            for (uint8_t i = 0; i < 4; i++) {
+                uint16_t cell = voltbuff[(i * 2) + 1] << 8 | voltbuff[i * 2];
+                _state.cell_voltages.cells[i] = cell;
+                pack_voltage_mv += (float)cell;
+            }
+
+            float avg = (pack_voltage_mv / 4);
+
+            for(uint8_t i = 4; i < 6; ++i) {
+                _state.cell_voltages.cells[i] = avg;
+                pack_voltage_mv += _state.cell_voltages.cells[i];
+            }
+
+            _has_cell_voltages = true;
+
+            // accumulate the pack voltage out of the total of the cells
+            _state.voltage = pack_voltage_mv * 1e-3;
+            _state.last_time_micros = tnow;
+            _state.healthy = true;
+        }
+    } else {
+        // voltage will be read below
+        _has_cell_voltages = false;
     }
-
-    avg_cell = (pack_voltage_mv / 4);
-
-    for(uint16_t i = 0; i < 2; ++i) {
-        pack_voltage_mv += avg_cell;
-        _state.cell_voltages.cells[i + 4] = avg_cell;
-    }
-
-    _state.voltage = pack_voltage_mv * 1e-3;
-    _state.healthy = true;
 }
 
-bool AP_BattMonitor_SMBus_Endurance::read_remaining_capacity_endurance() {
+bool AP_BattMonitor_SMBus_Endurance::read_remaining_capacity() {
     int32_t capacity = _params._pack_capacity;
 
     if (capacity > 0) {
         uint16_t data;
-        // _state.consumed_mah = (capacity - (capacity)); // Makes it return 100%
         if (read_word(_rem_cap_register, data)) {
-            if(data != 0) {
-                // Default implementation uses MAX(0, (capacity - data))
-                // so if the value comes back as 0, we get a momentary spike to 100% remaining.
-                // So only set state.consumed_mah 
-                _state.consumed_mah = (capacity - data);
+            float consumed = (capacity - data);
+            if(consumed > 0) {
+                _state.consumed_mah = consumed;
                 return true;
-            } else {
-                return false;
             }
         }
     }

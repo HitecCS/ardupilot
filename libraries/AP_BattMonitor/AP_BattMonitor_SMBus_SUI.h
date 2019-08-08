@@ -27,7 +27,10 @@ public:
 
 protected:
 
-    void timer(void);
+    std::vector<float> currents;
+    std::vector<float> consumed_mahs;
+
+    virtual void timer(void);
     virtual void read_cell_voltages();
 
     // read_block - returns number of characters read if successful, zero if unsuccessful
@@ -66,6 +69,6 @@ public:
 
 protected:
     virtual void timer();
-    virtual bool read_remaining_capacity_endurance();
-    virtual void read_endurance_cells();
+    virtual bool read_remaining_capacity();
+    virtual void read_cell_voltages();
 };
