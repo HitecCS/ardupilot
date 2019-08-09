@@ -188,6 +188,26 @@ void AP_BattMonitor_SMBus_SUI::read_cell_voltages() {
     }
 }
 
+bool AP_BattMonitor_SMBus_SUI::read_temp(void)
+{
+    uint16_t data;
+    if (read_word(_temp_register, data)) {
+        float temp = ((float)(data - 2731)) * 0.1f;
+
+        if((fabs(temp - avg(temperatures)) < 100) || temperatures.size() == 0) {
+            temperatures.push_back(temp);
+            if(temperatures.size() > 10) {
+                temperatures.erase(temperatures.begin());
+            }
+        }
+    }
+
+    _state.temperature = avg(temperatures);
+    _state.temperature_time = AP_HAL::millis();
+
+    return true;
+}
+
 // read_block - returns number of characters read if successful, zero if unsuccessful
 uint8_t AP_BattMonitor_SMBus_SUI::read_block(uint8_t reg, uint8_t* data, uint8_t max_len, bool append_zero) const
 {
@@ -315,3 +335,4 @@ bool AP_BattMonitor_SMBus_Endurance::read_remaining_capacity() {
 
     return false;
 }
+

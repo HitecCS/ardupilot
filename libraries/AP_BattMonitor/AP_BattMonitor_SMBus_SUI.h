@@ -29,9 +29,11 @@ protected:
 
     std::vector<float> currents;
     std::vector<float> consumed_mahs;
+    std::vector<float> temperatures;
 
     virtual void timer(void);
     virtual void read_cell_voltages();
+    virtual bool read_temp();
 
     // read_block - returns number of characters read if successful, zero if unsuccessful
     uint8_t read_block(uint8_t reg, uint8_t* data, uint8_t max_len, bool append_zero) const;
