@@ -89,7 +89,7 @@ void AP_BattMonitor_SMBus_SUI::timer()
         float current_amps = -(float)((int32_t)((uint32_t)buff[3]<<24 | (uint32_t)buff[2]<<16 | (uint32_t)buff[1]<<8 | (uint32_t)buff[0])) / 1000.0f;
 
         // float average = avg(currents);
-        bool add = (fabs(current_amps - _state.current_amps) < 10); // (average == 0/* || (fabs(current_amps - current_amps) < 10)*/) && (current_amps > 0);
+        bool add = (fabs(current_amps - _state.current_amps) < 50 || currents.size() == 0);
 
         if(add) {
             currents.push_back(current_amps);
