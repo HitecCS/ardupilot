@@ -64,11 +64,11 @@ protected:
     // reads the remaining capacity
     // returns true if the read was succesful, which is only considered to be the
     // we know the full charge capacity
-    bool read_remaining_capacity(void);
+    virtual bool read_remaining_capacity(void);
 
     // reads the temperature word from the battery
     // returns true if the read was successful
-    bool read_temp(void);
+    virtual bool read_temp(void);
 
     // reads the serial number if it's not already known
     // returns true if the read was successful, or the number was already known
