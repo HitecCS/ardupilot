@@ -326,7 +326,7 @@ bool AP_BattMonitor_SMBus_Endurance::read_remaining_capacity() {
         uint16_t data;
         if (read_word(_rem_cap_register, data)) {
             float consumed = (capacity - data);
-            if(consumed > 0) {
+            if((consumed > 0) && (consumed < capacity)) {
                 _state.consumed_mah = consumed;
                 return true;
             }
