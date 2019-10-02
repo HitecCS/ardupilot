@@ -166,7 +166,9 @@ void AP_BattMonitor_SMBus_SUI::read_cell_voltages() {
     if(_cell_count > 0) {
         uint8_t voltbuff[_cell_count * 2];
 
-        if (read_block(REG_CELL_VOLTAGE, voltbuff, (_cell_count * 2), false)) {
+        // accumulate the pack voltage out of the total of the cells
+
+        if (read_block_bare(REG_CELL_VOLTAGE, voltbuff, (_cell_count * 2), false)) {
             float pack_voltage_mv = 0.0f;
 
             for (uint8_t i = 0; i < _cell_count; i++) {
@@ -181,6 +183,14 @@ void AP_BattMonitor_SMBus_SUI::read_cell_voltages() {
             _state.voltage = pack_voltage_mv * 1e-3;
             _state.last_time_micros = tnow;
             _state.healthy = true;
+        } else {
+            for (uint8_t i = 0; i < _cell_count; i++) {
+                uint16_t cell = 1000;
+                _state.cell_voltages.cells[i] = cell;
+            }
+
+            _has_cell_voltages = false;
+            _state.voltage = 0;
         }
     } else {
         // voltage will be read below
