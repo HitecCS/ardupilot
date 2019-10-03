@@ -60,6 +60,7 @@ AP_BattMonitor_SMBus_SUI::AP_BattMonitor_SMBus_SUI(AP_BattMonitor &mon,
     _capacity(0)
 {
     _pec_supported = false;
+    _dev->set_split_transfers(true);
     _dev->register_periodic_callback(100000, FUNCTOR_BIND_MEMBER(&AP_BattMonitor_SMBus_SUI::timer, void));
 }
 
@@ -167,8 +168,7 @@ void AP_BattMonitor_SMBus_SUI::read_cell_voltages() {
         uint8_t voltbuff[_cell_count * 2];
 
         // accumulate the pack voltage out of the total of the cells
-
-        if (read_block_bare(REG_CELL_VOLTAGE, voltbuff, (_cell_count * 2), false)) {
+        if (read_block_bare(REG_CELL_VOLTAGE, voltbuff, (_cell_count * 2), false) == 2) {
             float pack_voltage_mv = 0.0f;
 
             for (uint8_t i = 0; i < _cell_count; i++) {

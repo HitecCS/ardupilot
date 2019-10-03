@@ -22,7 +22,7 @@ public:
         BattMonitor_TYPE_MAXELL                     = 7,
         BattMonitor_TYPE_UAVCAN_BatteryInfo         = 8,
         BattMonitor_TYPE_BLHeliESC                  = 9,
-        BattMonitor_TYPE_XRay                       = 10,
+        BattMonitor_TYPE_XRay                       = 15,
         BattMonitor_TYPE_Endurance                  = 11,
     };
 
