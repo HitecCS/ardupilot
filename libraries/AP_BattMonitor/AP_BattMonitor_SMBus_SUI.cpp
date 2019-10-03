@@ -168,7 +168,7 @@ void AP_BattMonitor_SMBus_SUI::read_cell_voltages() {
         uint8_t voltbuff[_cell_count * 2];
 
         // accumulate the pack voltage out of the total of the cells
-        if (read_block_bare(REG_CELL_VOLTAGE, voltbuff, (_cell_count * 2), false) == 2) {
+        if (read_block_bare(REG_CELL_VOLTAGE, voltbuff, (_cell_count * 2), false)) {
             float pack_voltage_mv = 0.0f;
 
             for (uint8_t i = 0; i < _cell_count; i++) {
