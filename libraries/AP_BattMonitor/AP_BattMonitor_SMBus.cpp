@@ -7,7 +7,30 @@ AP_BattMonitor_SMBus::AP_BattMonitor_SMBus(AP_BattMonitor &mon,
                                            AP_BattMonitor_Params &params,
                                            AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev)
         : AP_BattMonitor_Backend(mon, mon_state, params),
-        _dev(std::move(dev))
+        _dev(std::move(dev)),
+        _full_cap_register(BATTMONITOR_SMBUS_FULL_CHARGE_CAPACITY),
+        _rem_cap_register(BATTMONITOR_SMBUS_REMAINING_CAPACITY),
+        _temp_register(BATTMONITOR_SMBUS_TEMP),
+        _serial_register(BATTMONITOR_SMBUS_SERIAL)
+{
+    _params._serial_number = AP_BATT_SERIAL_NUMBER_DEFAULT;
+    _params._pack_capacity = 0;
+}
+
+AP_BattMonitor_SMBus::AP_BattMonitor_SMBus(AP_BattMonitor &mon,
+                                           AP_BattMonitor::BattMonitor_State &mon_state,
+                                           AP_BattMonitor_Params &params,
+                                           AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev,
+                                           uint8_t full_cap_register,
+                                           uint8_t rem_cap_register,
+                                           uint8_t temp_register,
+                                           uint8_t serial_register)
+        : AP_BattMonitor_Backend(mon, mon_state, params),
+        _dev(std::move(dev)),
+        _full_cap_register(full_cap_register),
+        _rem_cap_register(rem_cap_register),
+        _temp_register(temp_register),
+        _serial_register(serial_register)
 {
     _params._serial_number = AP_BATT_SERIAL_NUMBER_DEFAULT;
     _params._pack_capacity = 0;
@@ -42,7 +65,7 @@ bool AP_BattMonitor_SMBus::read_full_charge_capacity(void)
 
     if (_full_charge_capacity != 0) {
         return true;
-    } else if (read_word(BATTMONITOR_SMBUS_FULL_CHARGE_CAPACITY, data)) {
+    } else if (read_word(_full_cap_register, data)) {
         _full_charge_capacity = data;
         return true;
     }
@@ -58,7 +81,7 @@ bool AP_BattMonitor_SMBus::read_remaining_capacity(void)
 
     if (capacity > 0) {
         uint16_t data;
-        if (read_word(BATTMONITOR_SMBUS_REMAINING_CAPACITY, data)) {
+        if (read_word(_rem_cap_register, data)) {
             _state.consumed_mah = MAX(0, capacity - data);
             return true;
         }
@@ -72,7 +95,7 @@ bool AP_BattMonitor_SMBus::read_remaining_capacity(void)
 bool AP_BattMonitor_SMBus::read_temp(void)
 {
     uint16_t data;
-    if (read_word(BATTMONITOR_SMBUS_TEMP, data)) {
+    if (read_word(_temp_register, data)) {
         _state.temperature_time = AP_HAL::millis();
         _state.temperature = ((float)(data - 2731)) * 0.1f;
         return true;
@@ -89,7 +112,7 @@ bool AP_BattMonitor_SMBus::read_serial_number(void) {
     // don't recheck the serial number if we already have it
     if (_serial_number != -1) {
         return true;
-    } else if (read_word(BATTMONITOR_SMBUS_SERIAL, data)) {
+    } else if (read_word(_serial_register, data)) {
         _serial_number = data;
         return true;
     }

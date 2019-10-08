@@ -34,6 +34,15 @@ public:
                     AP_BattMonitor_Params &params,
                     AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev);
 
+    AP_BattMonitor_SMBus(AP_BattMonitor &mon,
+                    AP_BattMonitor::BattMonitor_State &mon_state,
+                    AP_BattMonitor_Params &params,
+                    AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev,
+                    uint8_t full_cap_register,
+                    uint8_t rem_cap_register,
+                    uint8_t temp_register,
+                    uint8_t serial_register);
+
     // virtual destructor to reduce compiler warnings
     virtual ~AP_BattMonitor_SMBus() {}
 
@@ -86,6 +95,10 @@ protected:
 
     virtual void timer(void) = 0;   // timer function to read from the battery
 
+    uint8_t _full_cap_register;     // Register for reading full-charge capacity
+    uint8_t _rem_cap_register;      // Register for reading remaining-charge capacity
+    uint8_t _temp_register;         // Register for reading temperature
+    uint8_t _serial_register;       // Register for reacing serial number
 };
 
 // include specific implementations

@@ -6,6 +6,7 @@
 #include "AP_BattMonitor_Sum.h"
 #include "AP_BattMonitor_FuelFlow.h"
 #include "AP_BattMonitor_FuelLevel_PWM.h"
+#include "AP_BattMonitor_SMBus_SUI.h"
 
 #include <AP_HAL/AP_HAL.h>
 
@@ -145,6 +146,16 @@ AP_BattMonitor::init()
                 break;
             case AP_BattMonitor_Params::BattMonitor_TYPE_FuelLevel_PWM:
                 drivers[instance] = new AP_BattMonitor_FuelLevel_PWM(*this, state[instance], _params[instance]);
+                break;
+            case AP_BattMonitor_Params::BattMonitor_TYPE_Xeno:
+                drivers[instance] = new AP_BattMonitor_SMBus_Xray(*this, state[instance], _params[instance],
+                                                                  hal.i2c_mgr->get_device(AP_BATTMONITOR_SMBUS_BUS_INTERNAL, AP_BATTMONITOR_SMBUS_I2C_ADDR,
+                                                                                          100000, true, 20));
+                break;
+            case AP_BattMonitor_Params::BattMonitor_TYPE_Endurance:
+                drivers[instance] = new AP_BattMonitor_SMBus_Endurance(*this, state[instance], _params[instance],
+                                                                  hal.i2c_mgr->get_device(AP_BATTMONITOR_SMBUS_BUS_INTERNAL, AP_BATTMONITOR_SMBUS_I2C_ADDR,
+                                                                                          100000, true, 20));
                 break;
             case AP_BattMonitor_Params::BattMonitor_TYPE_NONE:
             default:
