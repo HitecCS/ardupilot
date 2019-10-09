@@ -3,6 +3,7 @@
 #include "AP_BattMonitor_SMBus.h"
 #include "AP_BattMonitor_Bebop.h"
 #include "AP_BattMonitor_BLHeliESC.h"
+#include "AP_BattMonitor_SMBus_SUI.h"
 #if HAL_WITH_UAVCAN
 #include "AP_BattMonitor_UAVCAN.h"
 #endif
@@ -79,6 +80,18 @@ AP_BattMonitor::init()
                 drivers[instance] = new AP_BattMonitor_SMBus_Solo(*this, state[instance], _params[instance],
                                                                   hal.i2c_mgr->get_device(AP_BATTMONITOR_SMBUS_BUS_INTERNAL, AP_BATTMONITOR_SMBUS_I2C_ADDR,
                                                                                           100000, true, 20));
+                _num_instances++;
+                break;
+            case AP_BattMonitor_Params::BattMonitor_TYPE_Xeno:
+                drivers[instance] = new AP_BattMonitor_SMBus_Xray(*this, state[instance], _params[instance],
+                                                                  hal.i2c_mgr->get_device(AP_BATTMONITOR_SMBUS_BUS_INTERNAL, AP_BATTMONITOR_SMBUS_I2C_ADDR,
+                                                                                          100000, false, 20));
+                _num_instances++;
+                break;
+            case AP_BattMonitor_Params::BattMonitor_TYPE_Endurance:
+                drivers[instance] = new AP_BattMonitor_SMBus_Endurance(*this, state[instance], _params[instance],
+                                                                  hal.i2c_mgr->get_device(AP_BATTMONITOR_SMBUS_BUS_INTERNAL, AP_BATTMONITOR_SMBUS_I2C_ADDR,
+                                                                                          100000, false, 20));
                 _num_instances++;
                 break;
             case AP_BattMonitor_Params::BattMonitor_TYPE_MAXELL:
