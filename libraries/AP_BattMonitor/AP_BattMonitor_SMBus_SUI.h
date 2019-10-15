@@ -61,14 +61,20 @@ public:
 };
 
 // Endurance battery
-class AP_BattMonitor_SMBus_Endurance: public AP_BattMonitor_SMBus_SUI {
+class AP_BattMonitor_WithCellCount: public AP_BattMonitor_SMBus_SUI {
 public:
 
     // Constructor
-    AP_BattMonitor_SMBus_Endurance(AP_BattMonitor &mon,
+    AP_BattMonitor_WithCellCount(AP_BattMonitor &mon,
                              AP_BattMonitor::BattMonitor_State &mon_state,
                              AP_BattMonitor_Params &params,
                              AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev);
+
+    AP_BattMonitor_WithCellCount(AP_BattMonitor &mon,
+                             AP_BattMonitor::BattMonitor_State &mon_state,
+                             AP_BattMonitor_Params &params,
+                             AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev,
+                             uint8_t num_cells);
 
 protected:
     virtual void timer();

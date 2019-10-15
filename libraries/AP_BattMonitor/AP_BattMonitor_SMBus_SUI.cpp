@@ -6,11 +6,12 @@
 #include "AP_BattMonitor_SMBus_SUI.h"
 #include <utility>
 
+#include <GCS_MAVLink/GCS.h>
+
 //
 // Battery registers
 //
 #define REG_VOLTAGE             0x09
-#define REG_CURRENT             0x2a
 #define REG_REMCAP              0x0f
 #define REG_FULLCAP             0x10
 #define REG_TEMP                0x08
@@ -21,6 +22,7 @@
 #define REG_MANUF_INFO          0x25
 #define REG_MANUF_DATA          0x23    /// manufacturer data
 #define REG_CELL_VOLTAGE        0x28    // cell voltage register
+#define REG_CURRENT             0x2a
 
 #define BATTMONITOR_XRAY_NUM_CELLS      3
 #define BATTMONITOR_ENDURANCE_NUM_CELLS 6
@@ -60,8 +62,7 @@ AP_BattMonitor_SMBus_SUI::AP_BattMonitor_SMBus_SUI(AP_BattMonitor &mon,
     _capacity(0)
 {
     _pec_supported = false;
-    // _dev->set_split_transfers(true);
-    // _dev->register_periodic_callback(100000, FUNCTOR_BIND_MEMBER(&AP_BattMonitor_SMBus_SUI::timer, void));
+    _dev->set_split_transfers(true);
 }
 
 static float sum(std::vector<float>& v) {
@@ -165,10 +166,10 @@ void AP_BattMonitor_SMBus_SUI::read_cell_voltages() {
 
     // read cell voltages
     if(_cell_count > 0) {
-        uint8_t voltbuff[_cell_count * 2];
+        uint8_t voltbuff[8];
 
         // accumulate the pack voltage out of the total of the cells
-        if (read_block_bare(REG_CELL_VOLTAGE, voltbuff, (_cell_count * 2), false)) {
+        if (read_block_bare(REG_CELL_VOLTAGE, voltbuff, 8, false)) {
             float pack_voltage_mv = 0.0f;
 
             for (uint8_t i = 0; i < _cell_count; i++) {
@@ -183,15 +184,7 @@ void AP_BattMonitor_SMBus_SUI::read_cell_voltages() {
             _state.voltage = pack_voltage_mv * 1e-3;
             _state.last_time_micros = tnow;
             _state.healthy = true;
-        }/* else {
-            for (uint8_t i = 0; i < _cell_count; i++) {
-                uint16_t cell = 1000;
-                _state.cell_voltages.cells[i] = cell;
-            }
-
-            _has_cell_voltages = false;
-            _state.voltage = 0;
-        }*/
+        }
     } else {
         _has_cell_voltages = false;
     }
@@ -294,9 +287,9 @@ AP_BattMonitor_SMBus_Xray::AP_BattMonitor_SMBus_Xray(AP_BattMonitor &mon,
 {}
 
 //
-// Endurance battery
+// Takes a cell count in the constructor
 //
-AP_BattMonitor_SMBus_Endurance::AP_BattMonitor_SMBus_Endurance(AP_BattMonitor &mon,
+AP_BattMonitor_WithCellCount::AP_BattMonitor_WithCellCount(AP_BattMonitor &mon,
                                                    AP_BattMonitor::BattMonitor_State &mon_state,
                                                    AP_BattMonitor_Params &params,
                                                    AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev)
@@ -304,32 +297,44 @@ AP_BattMonitor_SMBus_Endurance::AP_BattMonitor_SMBus_Endurance(AP_BattMonitor &m
         REG_FULLCAP, REG_REMCAP, REG_TEMP, REG_SERIAL, REG_CURRENT, REG_VOLTAGE, BATTMONITOR_ENDURANCE_NUM_CELLS)
 {}
 
-void AP_BattMonitor_SMBus_Endurance::timer() {
+AP_BattMonitor_WithCellCount::AP_BattMonitor_WithCellCount(AP_BattMonitor &mon,
+                                                   AP_BattMonitor::BattMonitor_State &mon_state,
+                                                   AP_BattMonitor_Params &params,
+                                                   AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev,
+                                                   uint8_t num_cells)
+    : AP_BattMonitor_SMBus_SUI(mon, mon_state, params, std::move(dev), 
+        REG_FULLCAP, REG_REMCAP, REG_TEMP, REG_SERIAL, REG_CURRENT, REG_VOLTAGE, num_cells)
+{}
+
+void AP_BattMonitor_WithCellCount::timer() {
     AP_BattMonitor_SMBus_SUI::timer();
     read_remaining_capacity();
 }
 
-void AP_BattMonitor_SMBus_Endurance::read_cell_voltages() {
+void AP_BattMonitor_WithCellCount::read_cell_voltages() {
     uint32_t tnow = AP_HAL::micros();
 
     // read cell voltages
     if(_cell_count > 0) {
-        uint8_t voltbuff[_cell_count * 2];
+        // uint8_t voltbuff[_cell_count * 2];
+        uint8_t voltbuff[8];
 
-        if (read_block(REG_CELL_VOLTAGE, voltbuff, (_cell_count * 2), false)) {
+        if (read_block(REG_CELL_VOLTAGE, voltbuff, 8, false)) {
             float pack_voltage_mv = 0.0f;
 
-            for (uint8_t i = 0; i < 4; i++) {
+            for (uint8_t i = 0; i < MIN(4, _cell_count); i++) {
                 uint16_t cell = voltbuff[(i * 2) + 1] << 8 | voltbuff[i * 2];
                 _state.cell_voltages.cells[i] = cell;
                 pack_voltage_mv += (float)cell;
             }
 
-            float avg = (pack_voltage_mv / 4);
+            if(_cell_count >= 4) {
+                float avg = (pack_voltage_mv / 4);
 
-            for(uint8_t i = 4; i < 6; ++i) {
-                _state.cell_voltages.cells[i] = avg;
-                pack_voltage_mv += _state.cell_voltages.cells[i];
+                for(uint8_t i = 4; i < 6; ++i) {
+                    _state.cell_voltages.cells[i] = avg;
+                    pack_voltage_mv += _state.cell_voltages.cells[i];
+                }
             }
 
             _has_cell_voltages = true;
