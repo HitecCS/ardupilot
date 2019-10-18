@@ -31,6 +31,20 @@
 
 const int AVG_SIZE = 10;
 
+static float sum(std::vector<float>& v) {
+    float val = 0.0f;
+
+    for(std::vector<float>::iterator e = v.begin(); e != v.end(); e++) {
+        val += *e;
+    }
+
+    return val;
+}
+
+static float avg(std::vector<float>& values) {
+    return sum(values) / values.size();
+}
+
 /*
  * Other potentially useful registers, listed here for future use
  * #define BATTMONITOR_SMBUS_SUI_VOLTAGE           0x09    // voltage register
@@ -65,20 +79,6 @@ AP_BattMonitor_SMBus_SUI::AP_BattMonitor_SMBus_SUI(AP_BattMonitor &mon,
     _dev->set_split_transfers(true);
 }
 
-static float sum(std::vector<float>& v) {
-    float val = 0.0f;
-
-    for(std::vector<float>::iterator e = v.begin(); e != v.end(); e++) {
-        val += *e;
-    }
-
-    return val;
-}
-
-static float avg(std::vector<float>& values) {
-    return sum(values) / values.size();
-}
-
 void AP_BattMonitor_SMBus_SUI::timer()
 {
     uint8_t buff[8];
@@ -87,15 +87,14 @@ void AP_BattMonitor_SMBus_SUI::timer()
     read_cell_voltages();
 
     // read current
-    if (read_block_bare(_current_register, buff, 4, false) == 4) {
+    if (read_block_bare(_current_register, buff, 4, false)) {
         float current_amps = -(float)((int32_t)((uint32_t)buff[3]<<24 | (uint32_t)buff[2]<<16 | (uint32_t)buff[1]<<8 | (uint32_t)buff[0])) / 1000.0f;
 
-        // float average = avg(currents);
-        bool add = (fabs(current_amps - _state.current_amps) < 50 || currents.size() == 0);
+        bool add = true; // (fabs(current_amps - _state.current_amps) < 50 || currents.size() == 0);
 
         if(add) {
             currents.push_back(current_amps);
-            if(currents.size() > AVG_SIZE) {
+            if(currents.size() > 3) {
                 currents.erase(currents.begin());
             }
         }
@@ -103,6 +102,7 @@ void AP_BattMonitor_SMBus_SUI::timer()
         _state.current_amps = avg(currents);
         _state.last_time_micros = tnow;
     } else {
+        gcs().send_text(MAV_SEVERITY_INFO, "Unable to read current");
         _state.current_amps = avg(currents);
     }
 
@@ -196,7 +196,7 @@ bool AP_BattMonitor_SMBus_SUI::read_temp(void)
     if (read_word(_temp_register, data)) {
         float temp = ((float)(data - 2731)) * 0.1f;
 
-        if((fabs(temp - avg(temperatures)) < 100) || temperatures.size() == 0) {
+        if((fabs(temp - avg(temperatures)) < 100) || temperatures.size() == 0 && temp < 1000) {
             temperatures.push_back(temp);
             if(temperatures.size() > 10) {
                 temperatures.erase(temperatures.begin());
@@ -205,10 +205,36 @@ bool AP_BattMonitor_SMBus_SUI::read_temp(void)
     }
 
     _state.temperature = avg(temperatures);
+    // gcs().send_text(MAV_SEVERITY_WARNING, "temperature is %.0f", _state.temperature);
     _state.temperature_time = AP_HAL::millis();
 
     return true;
 }
+
+bool AP_BattMonitor_SMBus_SUI::read_remaining_capacity() {
+    int32_t capacity = _params._pack_capacity;
+
+    if (capacity > 0) {
+        uint16_t data;
+        if (read_word(_rem_cap_register, data)) {
+            float consumed = (capacity - data);
+            if((consumed > 0) && (consumed < capacity)) {
+                consumed_mahs.push_back(consumed);
+
+                if(consumed_mahs.size() > 10) {
+                    consumed_mahs.erase(consumed_mahs.begin());
+                }
+
+                _state.consumed_mah = avg(consumed_mahs);
+                // _state.consumed_mah = consumed;
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 
 // read_block - returns number of characters read if successful, zero if unsuccessful
 uint8_t AP_BattMonitor_SMBus_SUI::read_block(uint8_t reg, uint8_t* data, uint8_t max_len, bool append_zero) const
@@ -244,23 +270,6 @@ uint8_t AP_BattMonitor_SMBus_SUI::read_block(uint8_t reg, uint8_t* data, uint8_t
 
     // return success
     return bufflen;
-}
-
-bool AP_BattMonitor_SMBus_SUI::read_remaining_capacity() {
-    int32_t capacity = _params._pack_capacity;
-
-    if (capacity > 0) {
-        uint16_t data;
-        if (read_word(_rem_cap_register, data)) {
-            float consumed = (capacity - data);
-            if((consumed > 0) && (consumed < capacity)) {
-                _state.consumed_mah = consumed;
-                return true;
-            }
-        }
-    }
-
-    return false;
 }
 
 // read_bare_block - returns number of characters read if successful, zero if unsuccessful
